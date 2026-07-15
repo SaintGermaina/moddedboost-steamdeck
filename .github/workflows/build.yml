@@ -31,6 +31,8 @@ jobs:
           patch -p1 -d moddedboost < patches/moddedboost-0.2.8-linux.patch
           patch -p1 -d booststudio < patches/booststudio-steamdeck-wine.patch
           rm -f moddedboost/src-tauri/.cargo/config.toml
+          # Updater has no Linux feed and its missing config crashes startup - skip plugin registration
+          sed -i '/#\[cfg(desktop)\]/d;/tauri_plugin_updater::Builder::new/d' moddedboost/src-tauri/src/lib.rs
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
