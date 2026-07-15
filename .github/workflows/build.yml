@@ -30,6 +30,7 @@ jobs:
         run: |
           patch -p1 -d moddedboost < patches/moddedboost-0.2.8-linux.patch
           patch -p1 -d booststudio < patches/booststudio-steamdeck-wine.patch
+          rm -f moddedboost/src-tauri/.cargo/config.toml
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
