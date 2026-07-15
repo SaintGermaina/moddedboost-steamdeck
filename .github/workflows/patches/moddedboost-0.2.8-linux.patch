@@ -1,0 +1,113 @@
+diff -ruN pristine-mb/src/components/common/title-bar/title-bar.tsx mb-patched/src/components/common/title-bar/title-bar.tsx
+--- pristine-mb/src/components/common/title-bar/title-bar.tsx	2024-04-14 00:51:59.000000000 +0900
++++ mb-patched/src/components/common/title-bar/title-bar.tsx	2026-07-15 22:09:02.884218329 +0900
+@@ -41,13 +41,22 @@
+ 
+   const checkUpdate = async (showToast: boolean) => {
+     setIsChecking(true)
+-    const checkResult = await check();
+-    if (checkResult && checkResult.available) {
+-      setOpenUpdateModal(checkResult)
+-    } else if (showToast) {
+-      toast.info(i18n.t("No updates found!"));
++    try {
++      const checkResult = await check();
++      if (checkResult && checkResult.available) {
++        setOpenUpdateModal(checkResult)
++      } else if (showToast) {
++        toast.info(i18n.t("No updates found!"));
++      }
++    } catch (e) {
++      // No updater feed for this platform (e.g. Linux builds) - not fatal
++      console.error(e);
++      if (showToast) {
++        toast.info(i18n.t("No updates found!"));
++      }
++    } finally {
++      setIsChecking(false)
+     }
+-    setIsChecking(false)
+   }
+   
+   useEffect(() => {
+diff -ruN pristine-mb/src-tauri/src/app_initialize.rs mb-patched/src-tauri/src/app_initialize.rs
+--- pristine-mb/src-tauri/src/app_initialize.rs	2024-04-14 00:51:59.000000000 +0900
++++ mb-patched/src-tauri/src/app_initialize.rs	2026-07-15 22:09:02.882218328 +0900
+@@ -20,6 +20,20 @@
+         .with_exclude_filter("icon.ico")
+         .run()
+         .expect("dir copy failed");
+-    
++
++    // Ensure bundled tool binaries are executable on unix
++    #[cfg(unix)]
++    {
++        use std::os::unix::fs::PermissionsExt;
++        let tools_path = app.path()
++            .resolve("tools", BaseDirectory::AppData)
++            .expect("failed to resolve resource");
++        for entry in walkdir::WalkDir::new(tools_path).into_iter().flatten() {
++            if entry.file_type().is_file() {
++                let _ = std::fs::set_permissions(entry.path(), std::fs::Permissions::from_mode(0o755));
++            }
++        }
++    }
++
+     Ok(())
+ }
+\ No newline at end of file
+diff -ruN pristine-mb/src-tauri/src/psarc.rs mb-patched/src-tauri/src/psarc.rs
+--- pristine-mb/src-tauri/src/psarc.rs	2024-04-14 00:51:59.000000000 +0900
++++ mb-patched/src-tauri/src/psarc.rs	2026-07-15 22:09:02.882218328 +0900
+@@ -12,7 +12,7 @@
+ ) -> Result<(), ()> {
+     let rclone_name = match get_os() {
+         OS::Windows => "BoostStudio.Console-win-x86.exe",
+-        OS::Linux => panic!("Not supported"),
++        OS::Linux => "BoostStudio.Console-linux-x64",
+         OS::Macos => panic!("Not supported")
+     };
+ 
+@@ -66,7 +66,7 @@
+ ) -> Result<(), ()> {
+     let rclone_name = match get_os() {
+         OS::Windows => "BoostStudio.Console-win-x86.exe",
+-        OS::Linux => panic!("Not supported"),
++        OS::Linux => "BoostStudio.Console-linux-x64",
+         OS::Macos => panic!("Not supported")
+     };
+ 
+diff -ruN pristine-mb/src-tauri/src/rclone.rs mb-patched/src-tauri/src/rclone.rs
+--- pristine-mb/src-tauri/src/rclone.rs	2024-04-14 00:51:59.000000000 +0900
++++ mb-patched/src-tauri/src/rclone.rs	2026-07-15 22:09:02.882218328 +0900
+@@ -23,7 +23,7 @@
+ ) -> Result<bool, ()> {
+     let rclone_name = match get_os() {
+         OS::Windows => "rclone-win.exe",
+-        OS::Linux => "rclone-linux.exe",
++        OS::Linux => "rclone-linux",
+         OS::Macos => "rclone-mac.exe",
+     };
+ 
+diff -ruN pristine-mb/src-tauri/tauri.conf.json mb-patched/src-tauri/tauri.conf.json
+--- pristine-mb/src-tauri/tauri.conf.json	2024-04-14 00:51:59.000000000 +0900
++++ mb-patched/src-tauri/tauri.conf.json	2026-07-15 22:09:02.884218329 +0900
+@@ -42,16 +42,8 @@
+   "plugins": {
+     "shell": {
+       "open": true
+-    },
+-    "updater": {
+-      "dialog": true,
+-      "active": true,
+-      "endpoints": [
+-        "https://descatal.github.io/cdn/updates/moddedboost.json"
+-      ],
+-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMzMEY0RjU1MEIzNjc1OEMKUldTTWRUWUxWVThQdzgxcHZaL2hPaExkcmJXWHNFandSVUh2Vnl1T205OG0rYUJ2aUh5V01MdXUK"
+     }
+   },
+   "productName": "ModdedBoost",
+   "version": "0.2.8"
+-}
+\ No newline at end of file
++}
