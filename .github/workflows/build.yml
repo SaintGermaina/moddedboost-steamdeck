@@ -1,0 +1,91 @@
+name: Build ModdedBoost for Steam Deck
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout this repo (patches)
+        uses: actions/checkout@v4
+
+      - name: Checkout ModdedBoost 0.2.8
+        uses: actions/checkout@v4
+        with:
+          repository: descatal/ModdedBoost
+          ref: '0.2.8'
+          path: moddedboost
+
+      - name: Checkout BoostStudio (commit with linux/wine psarc support)
+        uses: actions/checkout@v4
+        with:
+          repository: descatal/BoostStudio
+          ref: 17ddfb2bf06ab52febc0b49a2536e15cd928e4b2
+          path: booststudio
+
+      - name: Apply Linux patches
+        run: |
+          patch -p1 -d moddedboost < patches/moddedboost-0.2.8-linux.patch
+          patch -p1 -d booststudio < patches/booststudio-steamdeck-wine.patch
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build BoostStudio.Console for linux-x64
+        run: |
+          cd booststudio/src/Core/Presentation/Console
+          dotnet publish -c Console -r linux-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:PublishReadyToRun=false \
+            -o "$GITHUB_WORKSPACE/bsout"
+          install -m 0755 "$GITHUB_WORKSPACE/bsout/BoostStudio.Console" \
+            "$GITHUB_WORKSPACE/moddedboost/src-tauri/resources/tools/booststudio/BoostStudio.Console-linux-x64"
+
+      - name: Make bundled tools executable
+        run: |
+          chmod +x moddedboost/src-tauri/resources/tools/rclone/rclone-linux
+          chmod +x moddedboost/src-tauri/resources/tools/sfo/sfo
+
+      - name: Install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      # Rust 1.79 pinned: the April 2024 Cargo.lock contains time v0.3.31,
+      # which fails to compile on Rust 1.80+
+      - name: Install Rust 1.79
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.79.0
+
+      - name: Build AppImage
+        env:
+          NO_STRIP: 'true'
+        run: |
+          cd moddedboost
+          pnpm install
+          pnpm tauri build --bundles appimage
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModdedBoost-SteamDeck-AppImage
+          path: moddedboost/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
